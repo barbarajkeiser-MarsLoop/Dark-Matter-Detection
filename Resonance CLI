@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""
+Resonance CLI - Dark Matter Detection Tool
+===========================================
+
+Command-line interface for detecting invisible forces in code.
+
+Usage:
+    resonance-cli.py detect --pattern magic-gravity mycode.py
+    resonance-cli.py scan --all myproject/
+    resonance-cli.py list-patterns
+    resonance-cli.py report mycode.py --output json
+"""
+
+import argparse
+import sys
+import json
+from pathlib import Path
+from typing import List, Dict, Any
+
+# Import detectors (in real implementation, these would be separate modules)
+try:
+    from magic_gravity_detector import (
+        detect_magic_gravity, 
+        calculate_dark_mass_score,
+        format_report as format_gravity_report
+    )
+    DETECTORS_AVAILABLE = True
+except ImportError:
+    DETECTORS_AVAILABLE = False
+    print("⚠️  Detectors not yet installed. Using stub mode.")
+
+
+# Detector registry
+AVAILABLE_PATTERNS = {
+    'magic-gravity': {
+        'name': 'Magic Gravity',
+        'description': 'Numeric literals used as thresholds, weights, limits',
+        'emoji': '🌑',
+        'status': 'implemented' if DETECTORS_AVAILABLE else 'stub',
+        'detector': detect_magic_gravity if DETECTORS_AVAILABLE else None
+    },
+    'phantom-loops': {
+        'name': 'Phantom Loops',
+        'description': 'Infinite loops that execute once',
+        'emoji': '♾️',
+        'status': 'planned',
+        'detector': None
+    },
+    'zombie-orbits': {
+        'name': 'Zombie Orbits',
+        'description': 'Code that runs but contributes nothing',
+        'emoji': '🧟',
+        'status': 'planned',
+        'detector': None
+    },
+    'evidence-voids': {
+        'name': 'Evidence Voids',
+        'description': 'Partial observability in metrics/logging',
+        'emoji': '📊',
+        'status': 'planned',
+        'detector': None
+    },
+    'aspiration-gaps': {
+        'name': 'Aspiration Gaps',
+        'description': 'Features defined but never triggered',
+        'emoji': '🪞',
+        'status': 'planned',
+        'detector': None
+    },
+    'anti-signal-absence': {
+        'name': 'Anti-Signal Absence',
+        'description': 'Missing decay/friction in accumulation',
+        'emoji': '📈',
+        'status': 'planned',
+        'detector': None
+    }
+}
+
+
+def read_source_file(filepath: Path) -> str:
+    """Read source file with error handling"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"❌ File not found: {filepath}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error reading {filepath}: {e}")
+        sys.exit(1)
+
+
+def list_patterns(args):
+    """List all available detection patterns"""
+    print("\n🌌 AVAILABLE DARK MATTER PATTERNS\n")
+    print("=" * 70)
+    
+    for pattern_id, info in AVAILABLE_PATTERNS.items():
+        status_emoji = "✅" if info['status'] == 'implemented' else "🚧"
+        print(f"\n{info['emoji']} {status_emoji} {info['name']}")
+        print(f"   ID: {pattern_id}")
+        print(f"   Status: {info['status']}")
+        print(f"   Description: {info['description']}")
+    
+    print("\n" + "=" * 70)
+    print(f"\nTotal patterns: {len(AVAILABLE_PATTERNS)}")
+    print(f"Implemented: {sum(1 for p in AVAILABLE_PATTERNS.values() if p['status'] == 'implemented')}")
+    print(f"Planned: {sum(1 for p in AVAILABLE_PATTERNS.values() if p['status'] == 'planned')}")
+    print("\nUsage: resonance-cli.py detect --pattern <pattern-id> <file>\n")
+
+
+def detect_pattern(args):
+    """Run specific detector on a file"""
+    pattern_id = args.pattern
+    filepath = Path(args.file)
+    
+    # Validate pattern
+    if pattern_id not in AVAILABLE_PATTERNS:
+        print(f"❌ Unknown pattern: {pattern_id}")
+        print(f"Available patterns: {', '.join(AVAILABLE_PATTERNS.keys())}")
+        sys.exit(1)
+    
+    pattern_info = AVAILABLE_PATTERNS[pattern_id]
+    
+    # Check if implemented
+    if pattern_info['status'] != 'implemented':
+        print(f"⚠️  Pattern '{pattern_id}' is not yet implemented (status: {pattern_info['status']})")
+        print(f"Check back soon or contribute at github.com/[repo-url]")
+        sys.exit(0)
+    
+    # Read source
+    print(f"\n🔍 Scanning {filepath} for {pattern_info['name']}...\n")
+    source = read_source_file(filepath)
+    
+    # Run detector
+    detector = pattern_info['detector']
+    results = detector(source)
+    
+    # Format output
+    if pattern_id == 'magic-gravity':
+        score = calculate_dark_mass_score(results)
+        report = format_gravity_report(results, score)
+        print(report)
+        
+        # Exit code based on severity
+        high_severity = sum(1 for r in results if r.severity == 'HIGH')
+        if high_severity > 0:
+            sys.exit(1)  # Fail CI if high severity found
+    else:
+        print(f"Results: {len(results)} patterns detected")
+        # Format other detector outputs here
+
+
+def scan_all(args):
+    """Run all available detectors on directory/file"""
+    target = Path(args.target)
+    
+    # Collect Python files
+    if target.is_file():
+        files = [target]
+    elif target.is_dir():
+        files = list(target.rglob("*.py"))
+    else:
+        print(f"❌ Target not found: {target}")
+        sys.exit(1)
+    
+    print(f"\n🌌 SCANNING {len(files)} Python files for dark matter...\n")
+    
+    # Run each detector
+    all_results = {}
+    total_score = 0.0
+    
+    for pattern_id, pattern_info in AVAILABLE_PATTERNS.items():
+        if pattern_info['status'] != 'implemented':
+            continue
+        
+        print(f"{pattern_info['emoji']} Running {pattern_info['name']}...")
+        
+        pattern_results = []
+        for filepath in files:
+            source = read_source_file(filepath)
+            detector = pattern_info['detector']
+            results = detector(source)
+            
+            if results:
+                pattern_results.append({
+                    'file': str(filepath),
+                    'findings': results
+                })
+        
+        all_results[pattern_id] = pattern_results
+        
+        # Calculate score for this pattern
+        if pattern_id == 'magic-gravity':
+            for file_result in pattern_results:
+                score = calculate_dark_mass_score(file_result['findings'])
+                total_score += score
+    
+    # Summary
+    print("\n" + "=" * 70)
+    print(f"\n📊 SCAN SUMMARY")
+    print(f"   Files scanned: {len(files)}")
+    print(f"   Total dark mass score: {total_score}")
+    
+    for pattern_id, results in all_results.items():
+        if results:
+            total_findings = sum(len(r['findings']) for r in results)
+            print(f"   {AVAILABLE_PATTERNS[pattern_id]['emoji']} {pattern_id}: {total_findings} findings")
+    
+    print("\n" + "=" * 70 + "\n")
+    
+    # Exit code based on total score
+    if total_score > 10.0:
+        print("⚠️  High dark matter detected (score > 10)")
+        sys.exit(1)
+
+
+def generate_report(args):
+    """Generate detailed report in specified format"""
+    filepath = Path(args.file)
+    output_format = args.output
+    
+    source = read_source_file(filepath)
+    
+    # Run all available detectors
+    report_data = {
+        'file': str(filepath),
+        'patterns': {}
+    }
+    
+    for pattern_id, pattern_info in AVAILABLE_PATTERNS.items():
+        if pattern_info['status'] != 'implemented':
+            continue
+        
+        detector = pattern_info['detector']
+        results = detector(source)
+        
+        report_data['patterns'][pattern_id] = {
+            'name': pattern_info['name'],
+            'findings': [
+                {
+                    'line': r.line,
+                    'severity': r.severity,
+                    'type': r.gravity_type.value if hasattr(r, 'gravity_type') else 'unknown',
+                    'context': r.context if hasattr(r, 'context') else '',
+                    'description': r.code_snippet if hasattr(r, 'code_snippet') else str(r)
+                }
+                for r in results
+            ]
+        }
+    
+    # Output in requested format
+    if output_format == 'json':
+        print(json.dumps(report_data, indent=2))
+    elif output_format == 'text':
+        print(f"\n🌌 DARK MATTER REPORT: {filepath}\n")
+        print("=" * 70)
+        
+        for pattern_id, data in report_data['patterns'].items():
+            print(f"\n{AVAILABLE_PATTERNS[pattern_id]['emoji']} {data['name']}")
+            print(f"Findings: {len(data['findings'])}")
+            
+            for finding in data['findings']:
+                print(f"  Line {finding['line']}: {finding['description']}")
+    else:
+        print(f"❌ Unknown output format: {output_format}")
+        sys.exit(1)
+
+
+def main():
+    """Main CLI entry point"""
+    parser = argparse.ArgumentParser(
+        description='🌌 Resonance CLI - Detect dark matter in code',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  resonance-cli.py list-patterns
+  resonance-cli.py detect --pattern magic-gravity mycode.py
+  resonance-cli.py scan --all myproject/
+  resonance-cli.py report mycode.py --output json
+
+For more info: github.com/[username]/dark-matter-detection
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest='command', help='Command to run')
+    
+    # list-patterns command
+    list_parser = subparsers.add_parser('list-patterns', help='List all available patterns')
+    
+    # detect command
+    detect_parser = subparsers.add_parser('detect', help='Run specific detector')
+    detect_parser.add_argument('--pattern', required=True, help='Pattern ID to detect')
+    detect_parser.add_argument('file', help='File to analyze')
+    
+    # scan command
+    scan_parser = subparsers.add_parser('scan', help='Run all detectors')
+    scan_parser.add_argument('--all', dest='target', required=True, help='Directory or file to scan')
+    
+    # report command
+    report_parser = subparsers.add_parser('report', help='Generate detailed report')
+    report_parser.add_argument('file', help='File to analyze')
+    report_parser.add_argument('--output', choices=['json', 'text'], default='text', help='Output format')
+    
+    args = parser.parse_args()
+    
+    # Route to appropriate handler
+    if args.command == 'list-patterns':
+        list_patterns(args)
+    elif args.command == 'detect':
+        detect_pattern(args)
+    elif args.command == 'scan':
+        scan_all(args)
+    elif args.command == 'report':
+        generate_report(args)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
