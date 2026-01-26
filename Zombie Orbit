@@ -1,0 +1,458 @@
+# Zombie Orbit: Live But Contribution-Zero Code Paths
+
+## Pattern Definition
+
+**Zombie Orbit** refers to code paths that:
+1. ✅ Execute successfully (no errors, no crashes)
+2. ✅ Consume resources (CPU, memory, time)
+3. ❌ Produce **no observable effect** on system state
+4. ❌ Contribute **zero value** to the program's purpose
+
+Like a zombie – technically alive, but not really living.
+
+---
+
+## Why "Orbit"?
+
+These code paths **orbit** the main program:
+- They're gravitationally bound (called by real code)
+- They move (execute)
+- They persist (survive refactors)
+- But they produce **no work** on the system they orbit
+
+Like debris orbiting a planet – moving but purposeless.
+
+---
+
+## Canonical Example
+
+```python
+def process_data(data):
+    result = expensive_computation(data)
+    validate(result)
+    # Result is computed and validated but NEVER USED
+    return None  # Original return statement removed, forgot to cleanup
+```
+
+**Zombie characteristics:**
+- `expensive_computation()` executes → ✅ runs
+- `validate()` executes → ✅ runs
+- Resources consumed → ✅ CPU/memory used
+- But `result` is never returned or stored → ❌ zero contribution
+- Function returns `None` → ❌ caller gets nothing
+
+**Gravitational effect:** Wastes cycles, slows pipeline, but never fails tests (returns successfully).
+
+---
+
+## Detection Heuristics
+
+### 1. **Value Computed But Never Used**
+```python
+# Zombie: computes but doesn't propagate
+def calculate_score(data):
+    score = complex_algorithm(data)
+    # score is never returned, logged, or stored
+    pass
+
+# Non-zombie: explicit discard with reason
+def calculate_score_for_warmup(data):
+    score = complex_algorithm(data)  # Warming up JIT compiler
+    pass
+```
+
+**AST Pattern:**
+- Variable assigned
+- Variable never read
+- No side effects in assignment
+- No comment explaining intentional discard
+
+### 2. **Function Called But Result Ignored**
+```python
+# Zombie: calls a pure function and ignores result
+important_computation(data)  # Returns value, but we don't capture it
+
+# Non-zombie: explicit intent
+_ = important_computation(data)  # Intentionally discarding for side effects
+```
+
+**AST Pattern:**
+- Expression statement (not assignment)
+- Function call returns non-None
+- No side effects documented
+
+### 3. **Loop That Does Nothing**
+```python
+# Zombie: iterates but changes nothing
+for item in items:
+    temp = transform(item)
+    # temp is never used, items not modified
+```
+
+**AST Pattern:**
+- Loop body has no:
+  - Return statements
+  - Mutations of external state
+  - I/O operations
+  - Assignments to persistent names
+
+### 4. **Conditional That Always No-Ops**
+```python
+# Zombie: condition always evaluates one way
+if config.feature_enabled:  # config.feature_enabled is always False in production
+    do_important_work()
+```
+
+**Runtime Pattern:**
+- Branch exists
+- Branch is never taken (dead code)
+- Or branch is always taken but body is empty
+
+### 5. **Dead Event Handlers**
+```python
+# Zombie: registered but never fired
+@app.route('/api/legacy')
+def legacy_endpoint():
+    # Endpoint exists, but no client calls it anymore
+    return process_legacy_data()
+```
+
+**Detection:**
+- Handler registered
+- Zero invocations in logs/metrics
+- No tests exercise it
+
+---
+
+## Real-World Examples
+
+### Example 1: Database Query Zombie
+```python
+def get_user_stats(user_id):
+    # Query executes (costs DB resources)
+    stats = db.query("SELECT * FROM user_stats WHERE id = ?", user_id)
+    
+    # Expensive joins and aggregations
+    enriched = stats.join(transactions).groupby('category')
+    
+    # But then... nothing
+    return {"status": "ok"}  # Hardcoded response, ignores all that work
+```
+
+**Zombie traits:**
+- DB round-trip happens
+- Join/groupby computation happens  
+- All results discarded
+- Returns static response
+
+**Origin:** Probably replaced real logic with stub for debugging, forgot to restore.
+
+### Example 2: Validation Zombie
+```python
+def save_user(user_data):
+    # Validation runs
+    errors = validate_user(user_data)
+    
+    # But errors are never checked!
+    db.insert(user_data)  # Saves regardless of validation result
+    return True
+```
+
+**Zombie traits:**
+- Validation executes (costs CPU)
+- Validation result computed
+- Result never influences control flow
+- Invalid data gets saved anyway
+
+**Origin:** Validation added but not wired into save logic.
+
+### Example 3: Feature Flag Zombie
+```python
+def process_order(order):
+    if feature_flags.use_new_pipeline:
+        result = new_pipeline(order)
+    else:
+        result = legacy_pipeline(order)
+    
+    # But result is never used!
+    send_confirmation_email(order)  # Uses order, not result
+    return order  # Returns input, not processed result
+```
+
+**Zombie traits:**
+- Both pipelines can execute
+- Expensive processing happens
+- Processed result discarded
+- Original unprocessed order used everywhere
+
+**Origin:** New pipeline added, but integration incomplete.
+
+### Example 4: Caching Zombie
+```python
+def get_data(key):
+    # Check cache
+    cached = cache.get(key)
+    if cached:
+        pass  # Found in cache but don't return it!
+    
+    # Always hits DB, even if cached
+    fresh = db.query(key)
+    cache.set(key, fresh)  # Updates cache but cache is never used
+    return fresh
+```
+
+**Zombie traits:**
+- Cache read happens
+- Cache write happens
+- Cache never influences return value
+- All requests hit DB (cache is pure overhead)
+
+**Origin:** Cache added but return logic not updated.
+
+---
+
+## Gravitational Effects
+
+| Effect | Description | Impact |
+|--------|-------------|--------|
+| **Resource Drain** | CPU/memory/network consumed for zero output | Performance degradation |
+| **Maintenance Burden** | Code must be read, understood, maintained | Developer time wasted |
+| **False Complexity** | Appears important, actually irrelevant | Cognitive overhead |
+| **Test Inflation** | Tests pass even though functionality broken | False confidence |
+| **Refactor Resistance** | Survives cleanups (looks purposeful) | Technical debt accumulation |
+
+---
+
+## Why Zombies Persist
+
+### 1. **Incomplete Refactors**
+```python
+# Before: return expensive_calc(data)
+# After: return simple_calc(data)
+# Forgot to remove: expensive_calc(data) [now zombie]
+```
+
+### 2. **Feature Flag Decay**
+```python
+if NEW_FEATURE:  # Feature flag now always False
+    new_code()   # This is now zombie code
+```
+
+### 3. **API Evolution**
+```python
+# Old: result = api_v1(data)
+# New: result = api_v2(data)
+# Zombie: api_v1(data) still called but result ignored
+```
+
+### 4. **Validation Additions**
+```python
+# Original: db.save(data)
+# Added validation: errors = validate(data)
+# But forgot: if errors: return errors
+# Result: Validation runs, result ignored (zombie)
+```
+
+### 5. **Copy-Paste Inheritance**
+```python
+# Copied template code with setup logic
+# Removed actual use of setup
+# Forgot to remove setup itself (zombie)
+```
+
+---
+
+## Detection Tools
+
+### AST-Based Detection
+```python
+import ast
+
+class ZombieDetector(ast.NodeVisitor):
+    def __init__(self):
+        self.zombies = []
+    
+    def visit_Assign(self, node):
+        # Variable assigned but never read
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                if not self.is_name_used_later(target.id, node):
+                    self.zombies.append({
+                        'type': 'unused_assignment',
+                        'var': target.id,
+                        'line': node.lineno
+                    })
+    
+    def visit_Expr(self, node):
+        # Expression statement (result ignored)
+        if isinstance(node.value, ast.Call):
+            func = node.value.func
+            if self.is_pure_function(func):
+                self.zombies.append({
+                    'type': 'ignored_return',
+                    'func': ast.unparse(func),
+                    'line': node.lineno
+                })
+```
+
+### Runtime Detection
+```python
+# Instrument functions to track:
+# 1. How often called
+# 2. Whether return value used
+# 3. Whether side effects observable
+
+from functools import wraps
+
+def detect_zombie(func):
+    stats = {'calls': 0, 'returns_used': 0}
+    
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        stats['calls'] += 1
+        result = func(*args, **kwargs)
+        
+        # If result is captured, mark as used
+        # (requires bytecode inspection or caller tracking)
+        
+        return result
+    
+    return wrapper
+```
+
+---
+
+## Mitigation Strategies
+
+### 1. **Linting Rules**
+```python
+# Enforce: warn on unused assignments
+# Enforce: warn on ignored return values from pure functions
+# Enforce: require explicit _ for intentional discards
+```
+
+### 2. **Code Review Checklist**
+- [ ] Is every computed value used?
+- [ ] Are all function results captured or intentionally discarded?
+- [ ] Do all branches have observable effects?
+- [ ] Are validation results checked?
+- [ ] Are cache checks actually used?
+
+### 3. **Type Hints + Strict Mode**
+```python
+# Use type checker to enforce result usage
+def compute() -> int:  # Returns int
+    ...
+
+result = compute()  # Type checker requires capturing
+# vs
+compute()  # Type checker warns: ignoring int return
+```
+
+### 4. **Dead Code Elimination in CI**
+```bash
+# Run coverage + AST analysis
+# Flag code that:
+# - Executes (not dead)
+# - But produces no observable output (zombie)
+```
+
+### 5. **Monitoring Instrumentation**
+```python
+# Track function calls with zero downstream effect
+# Alert if execution time > threshold but contribution = 0
+```
+
+---
+
+## Zombie vs. Dead Code
+
+| Aspect | Dead Code | Zombie Code |
+|--------|-----------|-------------|
+| **Executes?** | ❌ Never | ✅ Yes |
+| **Reachable?** | ❌ No | ✅ Yes |
+| **Resources used?** | ❌ None | ✅ CPU/memory |
+| **Output used?** | N/A | ❌ No |
+| **Test coverage?** | ❌ 0% | ✅ May be high |
+| **Detection** | Static analysis | Requires data flow |
+
+**Key difference:** Dead code is *inactive*, zombie code is *ineffective*.
+
+---
+
+## Case Study: BRL Protocol Zombie Risk
+
+In the BRL Hot Resonance Protocol, **🪞 integration detection** is potentially zombie:
+
+```python
+def 🪞(s): 
+    return any(w in s.txt.lower() for w in ['applied','used','integrated','combined'])
+```
+
+**Zombie characteristics:**
+- ✅ Function defined (code exists)
+- ✅ Function callable (code live)
+- ✅ Returns boolean (computes value)
+- ❌ Never called in demo (zero contribution)
+- ❌ If called, return value not separately tracked (evidence void)
+
+**Status:** Not yet zombie (called in breathe loop), but **zombie-adjacent** (defined but never triggered in practice).
+
+---
+
+## Philosophy: Why Zombies Matter
+
+Zombie code is insidious because:
+1. **Tests pass** (code runs successfully)
+2. **Coverage high** (code executes)
+3. **No errors** (computation completes)
+4. **Looks purposeful** (non-trivial logic)
+
+But the **purpose is hollow** – all that activity produces nothing.
+
+It's the software equivalent of **Sisyphus pushing the boulder**:
+- Effort expended ✅
+- Motion happening ✅  
+- Progress made ❌
+
+---
+
+## Conclusion
+
+Zombie orbits are **invisible resource drains**. They:
+- Survive linting (syntax is fine)
+- Survive testing (execution is fine)
+- Survive review (looks reasonable)
+
+But they slowly **drain the system**:
+- Performance degradation (wasted cycles)
+- Maintenance burden (dead weight)
+- Complexity inflation (noise in signal)
+
+**Dark matter detection finds them** by asking:
+> "This code runs – but does it **matter**?"
+
+If the answer is no, you've found a zombie. 🧟‍♂️🌌
+
+---
+
+## Detection Checklist
+
+When reviewing code, ask:
+- [ ] Does this computation's result get used?
+- [ ] Does this function call produce side effects or used returns?
+- [ ] Does this loop modify state or accumulate results?
+- [ ] Does this conditional have observable effects in both branches?
+- [ ] Does this validation result influence control flow?
+- [ ] Does this cache check actually avoid work?
+
+If any answer is "no" → potential zombie orbit detected. 🌌
+
+---
+
+**Related Patterns:**
+- [Magic Gravity](../detectors/magic_gravity.md) – Arbitrary constants
+- [Phantom Loops](../detectors/phantom_loops.md) – Claims vs. reality
+- [Evidence Voids](../detectors/evidence_voids.md) – Partial observability
+
+**Back to:** [Pattern Catalog](../README.md#detector-catalog)
