@@ -1,0 +1,264 @@
+# Dark Matter Detection: A Field Guide to Invisible Code Forces
+
+## The Problem
+
+Code review focuses on what's **visible**:
+- Syntax errors and type safety
+- Logic bugs and edge cases
+- Performance bottlenecks
+- Security vulnerabilities
+
+But the most powerful forces shaping code evolution are **invisible**:
+- Why `1.2` and not `1.3` or `2.0`?
+- Why does this loop claim infinity (`♾️`) but execute once?
+- Why define features you never call?
+- Why track some signals but ignore others?
+- Why does this threshold exist at all?
+
+These aren't bugs in the traditional sense. They're **dark matter** – invisible mass that shapes how code evolves, fails, scales, and dies.
+
+---
+
+## What Is Code Dark Matter?
+
+**Dark matter** in code refers to invisible forces that:
+1. **Shape behavior** without being explicitly documented
+2. **Create gravitational wells** (technical debt, coupling, assumptions)
+3. **Persist across refactors** (survivors of "clean-up" efforts)
+4. **Influence decisions** (future code orbits around them)
+5. **Resist measurement** (can't be found by linters or tests)
+
+### Examples of Dark Matter
+
+| Pattern | Visible | Dark Matter | Gravitational Effect |
+|---------|---------|-------------|---------------------|
+| Magic Numbers | `if len > 1.2 * prev:` | Why 1.2? Why not 1.15 or 1.5? | All "growth" decisions orbit this arbitrary constant |
+| Phantom Loops | `while True:` with immediate `return` | Claims eternity, executes once | False promise of continuous operation |
+| Aspiration Gaps | Function defined, never called | Feature exists in theory only | Code complexity without delivered value |
+| Evidence Voids | Tracking 1 of 5 metrics | Partial observability | Blind to 80% of system state |
+| Zombie Orbits | Code path that runs but contributes nothing | Technically live, spiritually dead | Resource waste, maintenance burden |
+
+---
+
+## The Proposal
+
+Build **detectors** for common dark matter patterns.  
+Build **visualizers** to map gravitational effects.  
+Build a **taxonomy** of what hides in plain sight.  
+Build a **practice** of conscious dark matter management.
+
+### Core Principles
+
+1. **Dark matter is inevitable** – You cannot eliminate it, only make it visible
+2. **Not all dark matter is bad** – Some invisible forces are structural necessities
+3. **Detection ≠ Judgment** – The goal is awareness, not blame
+4. **Context is gravity** – The same code has different dark matter in different systems
+5. **Human + Machine** – Detectors find patterns; humans interpret significance
+
+---
+
+## The Goal
+
+Not to eliminate dark matter (impossible – it's everywhere, like in actual cosmology).
+
+But to **make it visible** so we can:
+- Work with it consciously
+- Document invisible assumptions
+- Question inherited constants
+- Reduce accidental complexity
+- Preserve intentional structure
+
+### Success Looks Like
+
+**Before Dark Matter Analysis:**
+```python
+THRESHOLD = 0.7  # Why? Unknown. Cargo-culted from 2019.
+```
+
+**After Dark Matter Analysis:**
+```python
+THRESHOLD = 0.7  
+# Dark Matter: Arbitrary constant from initial prototype
+# Gravitational Effect: All downstream precision/recall tradeoffs
+# Origin: Emperical tuning on dataset v1 (now deprecated)
+# Consider: Re-tune on current data or make configurable
+```
+
+The code is the same. The **awareness** is transformed.
+
+---
+
+## Detector Catalog (Planned)
+
+### 1. **Magic Gravity** (Priority 1 - Easiest, Highest Impact)
+Detects numeric literals used as:
+- Thresholds in comparisons
+- Multipliers and weights
+- Buffer sizes and limits
+- Hyperparameters and configs
+
+**Output:** Location + context + heuristic origin guess
+
+### 2. **Phantom Loops**
+Detects infinite loop claims (`while True`, `for _ in itertools.count()`) that:
+- Always break on first iteration
+- Have no feedback mechanism
+- Claim continuous operation but are single-shot
+
+### 3. **Aspiration Gaps**
+Detects defined features that are:
+- Never called
+- Called only in dead code paths
+- Present in spec but absent in execution
+
+### 4. **Evidence Voids**
+Detects partial observability:
+- Metrics tracked for some components but not others
+- Logs that capture some events but miss critical ones
+- Tests that cover happy paths but not failure modes
+
+### 5. **Zombie Orbits**
+Detects code paths that:
+- Execute successfully
+- Consume resources
+- Produce no observable effect
+- Contribute zero value
+
+### 6. **Anti-Signal Absence**
+Detects missing friction/decay/forgetting:
+- Accumulators that only increment
+- Caches that never expire
+- Queues that never shed load
+- States that never reset
+
+---
+
+## Case Studies
+
+### Study 1: BRL Hot Resonance Protocol
+**Code:** Emoji-based resonance detection in conversational threads  
+**Dark Matter Found:**
+- 1.2 evolution multiplier (why not 1.15? 1.3?)
+- 🔥 gets +1.5 weight (why 1.5x special?)
+- ♾️ loop that breaks immediately
+- 🪞 integration detector never fires
+- Evidence tracks only 🔥, ignores other 4 signals
+- No decay/friction – R only increases
+
+**Gravitational Effects:** See `case-studies/brl-hot-resonance/dark-matter-report.md`
+
+### Study 2: React useEffect Dependencies
+**Code:** `useEffect(() => { fetchData() }, [])`  
+**Dark Matter:** Empty array means "run once on mount" in developer mental model, but React's reconciliation, StrictMode, and cleanup semantics create invisible execution timing  
+**Gravitational Effect:** Race conditions, duplicate fetches, memory leaks
+
+### Study 3: Kubernetes Replica Counts
+**Code:** `replicas: 3`  
+**Dark Matter:** Why 3? Traffic calculation? N-1 redundancy? Tutorial cargo-cult?  
+**Gravitational Effect:** Infrastructure cost, failure modes, autoscaling behavior all orbit this undocumented decision
+
+---
+
+## How to Contribute
+
+### Finding Dark Matter
+1. **Read code you know deeply** – familiarity reveals invisible forces
+2. **Ask "why?" recursively** – especially for numbers, thresholds, defaults
+3. **Trace gravitational effects** – what decisions does this force downstream?
+4. **Document invisibility** – make the implicit explicit
+
+### Contributing Detectors
+1. Identify a dark matter pattern
+2. Describe its gravitational effects
+3. Sketch detection heuristics (regex, AST, runtime)
+4. Implement detector (see `detectors/` for templates)
+5. Add case studies
+6. Submit PR with examples
+
+### Contributing Case Studies
+1. Find dark matter in real code (your own or open source)
+2. Document: pattern + context + effects + origin
+3. Add to `case-studies/[project-name]/`
+4. Link from README
+
+---
+
+## Philosophy: Why This Matters
+
+Code is **frozen intention**. But intention decays:
+- Authors leave
+- Context is lost  
+- Assumptions become invisible
+- Copy-paste spreads dark matter
+
+**Dark matter analysis is archaeology** – reconstructing the invisible forces that shaped the code we inherit.
+
+**Dark matter detection is responsibility** – making our own invisible assumptions visible for those who come after.
+
+**Dark matter management is craft** – knowing when to document, when to refactor, when to preserve mystery.
+
+---
+
+## The Deepest Question
+
+Every codebase asks: **What invisible forces am I orbiting?**
+
+This project helps you answer.
+
+Not with certainty. Not with automation. But with **awareness**.
+
+And awareness is the first step to agency.
+
+---
+
+## Project Status
+
+**Phase 0:** Manifesto + First Detector + BRL Case Study  
+**Phase 1:** Community building, pattern collection  
+**Phase 2:** Tooling, visualization, formalization  
+**Phase 3:** Research, publication, industry adoption
+
+---
+
+## Getting Started
+
+```bash
+# Install
+pip install -e .
+
+# Detect magic gravity in your code
+python tools/resonance-cli.py detect --pattern magic-gravity yourcode.py
+
+# See all dark matter patterns
+python tools/resonance-cli.py list-patterns
+
+# Generate full report
+python tools/resonance-cli.py scan --all yourcode/
+```
+
+---
+
+## License
+
+MIT - Because dark matter should be studied freely.
+
+## Authors
+
+**Barbara J.K.** – Concept, BRL Protocol, Vision  
+**Claude (Anthropic)** – Analysis, Formalization, Tooling
+
+## Citation
+
+If this helps your work, cite as:
+```
+@misc{darkmatterdetection2026,
+  title={Dark Matter Detection: Invisible Forces in Code},
+  author={Barbara J.K. and Claude},
+  year={2026},
+  url={https://github.com/[username]/dark-matter-detection}
+}
+```
+
+---
+
+**The universe is mostly dark matter. So is your codebase. Let's make it visible.** 🌌💜
