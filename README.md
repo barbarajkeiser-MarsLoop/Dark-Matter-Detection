@@ -556,7 +556,7 @@ Questions? Ideas? Found interesting dark matter?
 
 - **Open an issue:** [GitHub Issues](https://github.com/[username]/dark-matter-detection/issues)
 - **Start a discussion:** [GitHub Discussions](https://github.com/[username]/dark-matter-detection/discussions)
-- **Email:** [contact info]
+- **Email:** barbara.j.keiser@gmail.com
 
 ---
 
