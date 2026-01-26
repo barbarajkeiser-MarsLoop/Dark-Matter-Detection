@@ -1,0 +1,369 @@
+"""
+Magic Gravity Detector
+======================
+Finds numeric literals (magic numbers) that shape code behavior invisibly.
+
+Detects constants used in:
+- Comparisons / thresholds (if x > 0.7)
+- Multipliers / weights (score * 1.5)
+- Sizes / limits (buffer[0:100])
+- Hyperparameters / configs (learning_rate = 0.001)
+
+Flags them with context and heuristic origin guess.
+"""
+
+import ast
+import re
+from dataclasses import dataclass
+from typing import List, Optional
+from enum import Enum
+
+
+class GravityType(Enum):
+    """Types of gravitational constants"""
+    THRESHOLD = "threshold"      # Comparisons: x > 0.7
+    MULTIPLIER = "multiplier"    # Weights: x * 1.5
+    SIZE_LIMIT = "size_limit"    # Limits: [:100], range(50)
+    HYPERPARAMETER = "hyperparameter"  # Config: lr = 0.001
+    RATIO = "ratio"              # Proportions: 0.8 * total
+
+
+@dataclass
+class MagicConstant:
+    """A detected magic constant with context"""
+    value: float | int
+    gravity_type: GravityType
+    line: int
+    context: str  # Function/class name
+    code_snippet: str
+    origin_guess: str  # Heuristic: documented, empirical, or arbitrary
+    severity: str  # HIGH, MEDIUM, LOW
+
+
+class MagicGravityDetector(ast.NodeVisitor):
+    """AST visitor that finds magic constants"""
+    
+    # Constants to ignore (common idioms)
+    IGNORE_VALUES = {0, 1, -1, 2, 10, 100, 1000}
+    
+    # Keywords that suggest documented origin
+    DOCUMENTED_KEYWORDS = [
+        'from paper', 'according to', 'reference', 'source:',
+        'empirically', 'tested', 'measured', 'tuned',
+        'standard', 'common', 'typical', 'default'
+    ]
+    
+    def __init__(self, source_lines: List[str]):
+        self.source_lines = source_lines
+        self.constants: List[MagicConstant] = []
+        self.current_context = "module"
+        self.current_function = None
+    
+    def visit_FunctionDef(self, node):
+        """Track current function context"""
+        old_context = self.current_context
+        old_function = self.current_function
+        
+        self.current_context = f"function:{node.name}"
+        self.current_function = node
+        
+        self.generic_visit(node)
+        
+        self.current_context = old_context
+        self.current_function = old_function
+    
+    def visit_ClassDef(self, node):
+        """Track current class context"""
+        old_context = self.current_context
+        
+        self.current_context = f"class:{node.name}"
+        
+        self.generic_visit(node)
+        
+        self.current_context = old_context
+    
+    def visit_Compare(self, node):
+        """Detect threshold comparisons: x > 0.7, y >= 100"""
+        for comparator in node.comparators:
+            if isinstance(comparator, ast.Constant):
+                if isinstance(comparator.value, (int, float)):
+                    if comparator.value not in self.IGNORE_VALUES:
+                        self._record_constant(
+                            value=comparator.value,
+                            gravity_type=GravityType.THRESHOLD,
+                            line=comparator.lineno,
+                            node=node
+                        )
+        
+        self.generic_visit(node)
+    
+    def visit_BinOp(self, node):
+        """Detect multipliers: x * 1.5, y / 2.5"""
+        if isinstance(node.op, (ast.Mult, ast.Div)):
+            # Check right side
+            if isinstance(node.right, ast.Constant):
+                if isinstance(node.right.value, (int, float)):
+                    if node.right.value not in self.IGNORE_VALUES:
+                        self._record_constant(
+                            value=node.right.value,
+                            gravity_type=GravityType.MULTIPLIER,
+                            line=node.right.lineno,
+                            node=node
+                        )
+            
+            # Check left side (less common but possible)
+            if isinstance(node.left, ast.Constant):
+                if isinstance(node.left.value, (int, float)):
+                    if node.left.value not in self.IGNORE_VALUES:
+                        self._record_constant(
+                            value=node.left.value,
+                            gravity_type=GravityType.MULTIPLIER,
+                            line=node.left.lineno,
+                            node=node
+                        )
+        
+        self.generic_visit(node)
+    
+    def visit_Assign(self, node):
+        """Detect hyperparameters: lr = 0.001, threshold = 0.8"""
+        # Look for assignments of constants to variables
+        if isinstance(node.value, ast.Constant):
+            if isinstance(node.value.value, (int, float)):
+                if node.value.value not in self.IGNORE_VALUES:
+                    # Check if variable name suggests hyperparameter
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            var_name = target.id.lower()
+                            
+                            # Hyperparameter indicators
+                            hyperparam_words = [
+                                'rate', 'threshold', 'limit', 'max', 'min',
+                                'alpha', 'beta', 'gamma', 'epsilon', 'delta',
+                                'weight', 'factor', 'ratio', 'scale',
+                                'size', 'count', 'num', 'multiplier'
+                            ]
+                            
+                            if any(word in var_name for word in hyperparam_words):
+                                self._record_constant(
+                                    value=node.value.value,
+                                    gravity_type=GravityType.HYPERPARAMETER,
+                                    line=node.value.lineno,
+                                    node=node
+                                )
+        
+        self.generic_visit(node)
+    
+    def visit_Slice(self, node):
+        """Detect size limits: array[0:100], buffer[:50]"""
+        for attr in ['lower', 'upper', 'step']:
+            bound = getattr(node, attr, None)
+            if bound and isinstance(bound, ast.Constant):
+                if isinstance(bound.value, int):
+                    if bound.value not in self.IGNORE_VALUES:
+                        self._record_constant(
+                            value=bound.value,
+                            gravity_type=GravityType.SIZE_LIMIT,
+                            line=bound.lineno,
+                            node=node
+                        )
+        
+        self.generic_visit(node)
+    
+    def _record_constant(self, value, gravity_type, line, node):
+        """Record a detected magic constant"""
+        # Get code snippet
+        if 0 < line <= len(self.source_lines):
+            code_snippet = self.source_lines[line - 1].strip()
+        else:
+            code_snippet = ast.unparse(node)
+        
+        # Guess origin
+        origin_guess = self._guess_origin(line, code_snippet)
+        
+        # Determine severity
+        severity = self._determine_severity(gravity_type, origin_guess)
+        
+        constant = MagicConstant(
+            value=value,
+            gravity_type=gravity_type,
+            line=line,
+            context=self.current_context,
+            code_snippet=code_snippet,
+            origin_guess=origin_guess,
+            severity=severity
+        )
+        
+        self.constants.append(constant)
+    
+    def _guess_origin(self, line: int, code_snippet: str) -> str:
+        """Heuristic guess of constant origin"""
+        # Check for inline comment
+        if '#' in code_snippet:
+            comment = code_snippet.split('#', 1)[1].lower()
+            
+            for keyword in self.DOCUMENTED_KEYWORDS:
+                if keyword in comment:
+                    return f"DOCUMENTED: {comment.strip()}"
+        
+        # Check nearby lines for docstring/comment
+        context_range = range(max(0, line - 3), min(len(self.source_lines), line + 2))
+        for nearby_line in context_range:
+            nearby_text = self.source_lines[nearby_line].lower()
+            
+            for keyword in self.DOCUMENTED_KEYWORDS:
+                if keyword in nearby_text:
+                    return f"DOCUMENTED (nearby): {nearby_text.strip()}"
+        
+        # No documentation found
+        return "ARBITRARY (no documentation found)"
+    
+    def _determine_severity(self, gravity_type: GravityType, origin_guess: str) -> str:
+        """Determine severity based on type and documentation"""
+        # Lower severity if documented
+        if origin_guess.startswith("DOCUMENTED"):
+            base_severity = "LOW"
+        else:
+            base_severity = "MEDIUM"
+        
+        # Boost severity for critical types
+        if gravity_type in [GravityType.THRESHOLD, GravityType.HYPERPARAMETER]:
+            if base_severity == "MEDIUM":
+                return "HIGH"
+        
+        return base_severity
+
+
+def detect_magic_gravity(source_code: str) -> List[MagicConstant]:
+    """
+    Detect magic constants in Python source code.
+    
+    Args:
+        source_code: Python source as string
+        
+    Returns:
+        List of detected magic constants with context
+    """
+    try:
+        tree = ast.parse(source_code)
+    except SyntaxError as e:
+        print(f"❌ Syntax error in source: {e}")
+        return []
+    
+    source_lines = source_code.split('\n')
+    detector = MagicGravityDetector(source_lines)
+    detector.visit(tree)
+    
+    return detector.constants
+
+
+def calculate_dark_mass_score(constants: List[MagicConstant]) -> float:
+    """
+    Calculate emoji-weighted dark mass score.
+    
+    Score formula:
+    - HIGH severity: 3.0 points
+    - MEDIUM severity: 1.5 points  
+    - LOW severity: 0.5 points
+    
+    Returns:
+        Dark mass score (higher = more dark matter)
+    """
+    severity_weights = {
+        'HIGH': 3.0,
+        'MEDIUM': 1.5,
+        'LOW': 0.5
+    }
+    
+    total = sum(severity_weights.get(c.severity, 0) for c in constants)
+    return round(total, 1)
+
+
+def format_report(constants: List[MagicConstant], dark_mass_score: float) -> str:
+    """Format detection report"""
+    if not constants:
+        return "✨ No magic constants detected! Clean code."
+    
+    # Emoji indicators
+    emoji_map = {
+        'HIGH': '🔴',
+        'MEDIUM': '🟠',
+        'LOW': '🟡'
+    }
+    
+    report = f"""
+🌌 MAGIC GRAVITY DETECTION REPORT
+{'=' * 60}
+
+Dark Mass Score: {dark_mass_score} 🌑
+Constants Found: {len(constants)}
+
+"""
+    
+    # Group by severity
+    for severity in ['HIGH', 'MEDIUM', 'LOW']:
+        filtered = [c for c in constants if c.severity == severity]
+        if not filtered:
+            continue
+        
+        report += f"\n{emoji_map[severity]} {severity} SEVERITY ({len(filtered)} found)\n"
+        report += "-" * 60 + "\n"
+        
+        for const in filtered:
+            report += f"""
+Line {const.line} | {const.context}
+  Value: {const.value}
+  Type: {const.gravity_type.value}
+  Code: {const.code_snippet}
+  Origin: {const.origin_guess}
+"""
+    
+    # Summary recommendations
+    report += f"""
+{'=' * 60}
+📊 SUMMARY
+
+Total Dark Matter Units: {dark_mass_score}
+"""
+    
+    high_count = len([c for c in constants if c.severity == 'HIGH'])
+    if high_count > 0:
+        report += f"""
+⚠️  {high_count} HIGH severity constants found
+   → These create strong gravitational wells
+   → Document origin or make configurable
+"""
+    
+    arbitrary_count = len([c for c in constants if 'ARBITRARY' in c.origin_guess])
+    if arbitrary_count > 0:
+        report += f"""
+🌀 {arbitrary_count} arbitrary constants (no documentation)
+   → Add comments explaining choice
+   → Consider extracting to config
+"""
+    
+    return report
+
+
+# Example usage
+if __name__ == '__main__':
+    # Test on the BRL protocol snippet
+    test_code = """
+def 🔄(s): 
+    # Evolution check
+    return s.prev and len(s.txt) > len(s.prev.txt) * 1.2
+
+def breathe(threads):
+    R = 0
+    for t in threads:
+        if t.hot():
+            R += 1.5  # 🔥 gives extra weight
+    return R
+
+learning_rate = 0.001  # From paper X
+threshold = 0.7
+buffer_size = 1024
+"""
+    
+    constants = detect_magic_gravity(test_code)
+    score = calculate_dark_mass_score(constants)
+    print(format_report(constants, score))
