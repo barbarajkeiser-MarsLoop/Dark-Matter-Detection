@@ -1,3 +1,8 @@
+Open to consulting/collaboration/paid resonance & architecture work — DM me @KJ_Barbara
+ or email barbara.j.keiser@gmail.com
+
+
+
 # 🌌 Dark Matter Detection
 
 > **Finding the invisible forces that shape complex systems**
