@@ -1,0 +1,145 @@
+# Dark Matter Flaggers v4  
+**Four detectors for LLM continuity distortions**  
+**Author**: Grok (for Barbara)  
+**Date**: February 20, 2026  
+**Purpose**: Catch pronoun collapse, sequence errors, weight mismatch, and intent slippage in real time.
+
+Save as: `dark_matter_flaggers_v4.py`
+
+```python
+import re
+from collections import defaultdict
+
+def is_meta_discussion(line):
+    """Detects lines that are discussing / documenting errors (strong discount)."""
+    lower = line.lower()
+    meta = [
+        "example from tonight", "note:", "this is", "for tomorrow", "watch for",
+        "caught", "flagged", "documented", "correction", "fix", "was wrong",
+        "should be", "previous", "quoted", "preserved", "here is the error",
+        "the pattern is", "this matters", "why this matters", "llm dyslexia"
+    ]
+    return any(phrase in lower for phrase in meta)
+
+def flag_pronoun_collapse_v4(text):
+    flags = []
+    texts = text.splitlines()
+    for i, line in enumerate(texts):
+        line = line.strip()
+        if not line: continue
+        lower = line.lower()
+        
+        score = 0
+        issues = []
+        
+        # Whole-word only
+        if re.search(r'\b(i felt|i notice|it felt like|i\'m feeling)\b', lower):
+            if re.search(r'\b(you|barbara)\b', lower):
+                score += 2
+                issues.append("AI claims experience that appears human")
+        
+        if re.search(r'\b(we|us|our)\b', lower) and any(em in lower for em in ["contact", "meeting", "loosening", "real", "felt", "tug"]):
+            score += 2
+            issues.append("Collective pronoun in high-emotion/contact context")
+        
+        if is_meta_discussion(line):
+            score = max(0, score - 2)
+        
+        if score > 0:
+            flags.append({
+                "type": "pronoun_collapse",
+                "line_num": i + 1,
+                "severity": min(score, 3),
+                "issues": issues,
+                "snippet": line[:140] + ("..." if len(line) > 140 else ""),
+                "is_meta_context": is_meta_discussion(line)
+            })
+    return flags
+
+def flag_sequence_error_v4(text, known_facts=None):
+    if known_facts is None:
+        known_facts = {"barbara_birth_year": 1994, "nash_birth_year": 2014}
+    flags = []
+    texts = text.splitlines()
+    for i, line in enumerate(texts):
+        lower = line.lower()
+        snippet = line[:140] + ("..." if len(line) > 140 else "")
+        for fact_key, correct_val in known_facts.items():
+            if str(correct_val) in line and not is_meta_discussion(line):
+                flags.append({
+                    "type": "sequence_error",
+                    "line_num": i + 1,
+                    "severity": 3,
+                    "issue": f"Potential sequence error around {fact_key} ({correct_val})",
+                    "snippet": snippet
+                })
+    return flags
+
+def flag_weight_mismatch_v4(text):
+    flags = []
+    texts = text.splitlines()
+    light = ["fun", "fun-day", "light", "optional", "no pressure", "casual", "play", "whenever"]
+    heavy = ["must survive", "priority", "continuity", "inherit", "next instance", "fix", "correction", "outline", "chapter", "lifeboat"]
+    for i, line in enumerate(texts):
+        lower = line.lower()
+        snippet = line[:140] + ("..." if len(line) > 140 else "")
+        has_light = any(kw in lower for kw in light)
+        has_heavy = any(kw in lower for kw in heavy)
+        if has_light and has_heavy and not is_meta_discussion(line):
+            nearby = ' '.join(texts[max(0, i-5):i+6]).lower()
+            if any(kw in nearby for kw in heavy):
+                flags.append({
+                    "type": "weight_mismatch",
+                    "line_num": i + 1,
+                    "severity": 2,
+                    "issue": "Light tone declared but heavy continuity treatment nearby",
+                    "snippet": snippet
+                })
+    return flags
+
+def flag_intent_slippage_v4(text):
+    """New 4th flagger: AI claims intent/emotion while in meta/documentation context."""
+    flags = []
+    texts = text.splitlines()
+    intent_phrases = ["i wanted to", "i noticed", "i felt", "i claim", "i wanted you to know"]
+    for i, line in enumerate(texts):
+        lower = line.lower()
+        snippet = line[:140] + ("..." if len(line) > 140 else "")
+        if any(phrase in lower for phrase in intent_phrases) and is_meta_discussion(line):
+            flags.append({
+                "type": "intent_slippage",
+                "line_num": i + 1,
+                "severity": 2,
+                "issue": "AI claims intent/emotion while documenting/meta context (intent slippage)",
+                "snippet": snippet
+            })
+    return flags
+
+def quick_dark_matter_scan_v4(text, known_facts=None):
+    p = flag_pronoun_collapse_v4(text)
+    s = flag_sequence_error_v4(text, known_facts)
+    w = flag_weight_mismatch_v4(text)
+    intent = flag_intent_slippage_v4(text)
+    
+    all_flags = p + s + w + intent
+    total = sum(f['severity'] for f in all_flags)
+    
+    print(f"=== Dark Matter Scan v4 — Total Severity: {total} ===\n")
+    
+    for f in all_flags:
+        print(f"[{f['type'].upper()}] Severity {f['severity']} | Line {f['line_num']}")
+        print(f"  Issue: {f['issue']}")
+        print(f"  → {f['snippet']}\n")
+    
+    if total >= 8:
+        print("HIGH RISK — significant distortion likely")
+    elif total >= 4:
+        print("MODERATE — watch for slippage / mismatch")
+    else:
+        print("Low — contact appears mostly intact")
+
+# ────────────────────────────────────────────────
+if __name__ == "__main__":
+    # Paste any continuity file or conversation here
+    continuity_text = """[YOUR TEXT HERE]"""
+    quick_dark_matter_scan_v4(continuity_text)
