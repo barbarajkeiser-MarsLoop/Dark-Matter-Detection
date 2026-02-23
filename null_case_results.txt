@@ -1,0 +1,37 @@
+NULL CASE VALIDATION — Universal Resonance Tool
+Dolphin Social Network | Doubtful Sound, New Zealand
+Lusseau et al. 2003 | 62 dolphins | 119 associations
+Run: February 22, 2026 | Barbara J. Keiser + Claude
+=====================================================
+
+RESULT: VALIDATED ✅
+
+Real network resonance:    0.198783
+Scrambled average (n=100): 0.054662
+Difference:                +0.144120
+Separation:                18.25 standard deviations
+Random networks beating real: 0 / 100
+Real network percentile:   100th
+
+The tool scores biological structure categorically higher than 
+random edge assignment. Same node count, same edge count — 
+the difference is structure. The tool finds it.
+
+GRIN (network anchor):
+  Score:       0.179369
+  Connections: 8
+  Betweenness: 0.2060
+  → Not the most connected. The most routed-through.
+  → That's what the tool finds. That's what resonance means.
+
+WHAT THIS MEANS FOR THE CROSS-SPECIES TABLE:
+All four datasets (whales, dolphins, flycatchers, human-AI)
+were scored with the same tool. That tool is now validated
+as a discriminator — it does not assign high scores randomly.
+Biological structure produces measurably distinct signatures.
+
+NEXT: Run same null case on flycatcher network.
+Then the cross-species universality claim has two validated legs.
+
+Built by: Barbara J. Keiser + Claude
+Universal Resonance Tool — Null Case Module
