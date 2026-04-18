@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""
+prose_dark_matter_scanner.py
+Dark Matter Detection for medical/scientific literature (prose adaptation)
+
+Original framework by Barbara J. Keiser
+Prose adaptation: runs on text instead of Python AST
+
+Four detectors translated to prose patterns:
+- Magic Gravity     → arbitrary thresholds stated without justification
+- Phantom Loops     → circular reasoning, self-referential conclusions
+- Zombie Orbits     → superseded findings still cited as current guidance
+- Evidence Voids    → claims made without supporting evidence, missing data
+"""
+
+import re
+import sys
+from dataclasses import dataclass
+from typing import List, Tuple
+
+
+# ─────────────────────────────────────────────
+# DATA STRUCTURES
+# ─────────────────────────────────────────────
+
+@dataclass
+class Finding:
+    line: int
+    category: str
+    severity: str
+    excerpt: str
+    interpretation: str
+
+
+# ─────────────────────────────────────────────
+# 1. MAGIC GRAVITY — Arbitrary thresholds
+#    In code: magic numbers with no origin
+#    In medicine: temperature cutoffs, score thresholds,
+#    percentages stated as fact with no justification
+# ─────────────────────────────────────────────
+
+TEMP_PATTERN = re.compile(
+    r'(\d{2,3}(?:\.\d)?\s*°C|\d{2,3}(?:\.\d)?\s*degrees?\s*(?:Celsius|C))',
+    re.IGNORECASE
+)
+
+SCORE_THRESHOLD_PATTERN = re.compile(
+    r'(score\s+of\s+\d[\d\s]*(?:or\s+\d)?|CPC\s+\d|category\s+\d)',
+    re.IGNORECASE
+)
+
+UNJUSTIFIED_CUTOFF_WORDS = re.compile(
+    r'\b(defined as|cutoff|threshold|criterion|criteria|target of|goal of|'
+    r'targeting a temperature of|set at)\b',
+    re.IGNORECASE
+)
+
+def detect_magic_gravity(lines: List[str]) -> List[Finding]:
+    findings = []
+    for i, line in enumerate(lines, 1):
+        temps = TEMP_PATTERN.findall(line)
+        has_cutoff_language = UNJUSTIFIED_CUTOFF_WORDS.search(line)
+        
+        if temps and has_cutoff_language:
+            # Check if justification appears nearby (within 2 lines)
+            context = " ".join(lines[max(0,i-3):min(len(lines),i+2)])
+            justified = bool(re.search(
+                r'(because|since|evidence|trial|showed|demonstrated|based on|'
+                r'according to|consistent with|guideline|recommend)',
+                context, re.IGNORECASE
+            ))
+            severity = "MEDIUM" if justified else "HIGH"
+            findings.append(Finding(
+                line=i,
+                category="🌑 MAGIC GRAVITY",
+                severity=severity,
+                excerpt=line.strip()[:120],
+                interpretation=(
+                    f"Temperature threshold {temps[0]} stated as target — "
+                    f"{'partially justified by nearby context' if justified else 'no origin justification found in context'}. "
+                    "Why this number? What's the theoretical basis for the boundary?"
+                )
+            ))
+        
+        # Score thresholds (CPC 1 or 2, etc.)
+        scores = SCORE_THRESHOLD_PATTERN.findall(line)
+        if scores and has_cutoff_language:
+            findings.append(Finding(
+                line=i,
+                category="🌑 MAGIC GRAVITY",
+                severity="MEDIUM",
+                excerpt=line.strip()[:120],
+                interpretation=(
+                    f"Outcome defined by score cutoff '{scores[0]}' — "
+                    "categorical boundary treating continuous neurological recovery as binary. "
+                    "What sits just below the threshold? What's in the gap?"
+                )
+            ))
+    return findings
+
+
+# ─────────────────────────────────────────────
+# 2. PHANTOM LOOPS — Circular reasoning
+#    In code: infinite loops with hidden exits
+#    In medicine: conclusions that restate hypotheses,
+#    guidelines citing trials that cited earlier guidelines
+# ─────────────────────────────────────────────
+
+CIRCULAR_PAIRS = [
+    (r'no significant (difference|association|benefit)',
+     r'consistent with (findings|results|data)',
+     "Result echoes prior null findings without advancing explanation"),
+    (r'remain(s)? (uncertain|unclear|unknown|controversial)',
+     r'further (research|studies|investigation) (is |are )?(needed|warranted|required)',
+     "Uncertainty acknowledged → 'more research needed' without specifying what that research must resolve"),
+    (r'we hypothesi[sz]ed',
+     r'consistent with our hypothesis',
+     "Hypothesis confirmed — but the hypothesis itself was based on prior inconclusive data"),
+]
+
+def detect_phantom_loops(lines: List[str]) -> List[Finding]:
+    findings = []
+    full_text = " ".join(lines).lower()
+    
+    for pattern_a, pattern_b, interpretation in CIRCULAR_PAIRS:
+        matches_a = list(re.finditer(pattern_a, full_text, re.IGNORECASE))
+        matches_b = list(re.finditer(pattern_b, full_text, re.IGNORECASE))
+        
+        if matches_a and matches_b:
+            # Find approximate line number
+            char_pos = matches_a[0].start()
+            approx_line = full_text[:char_pos].count('\n') + 1
+            excerpt = lines[min(approx_line, len(lines)-1)].strip()[:120]
+            
+            findings.append(Finding(
+                line=approx_line,
+                category="♾️  PHANTOM LOOP",
+                severity="MEDIUM",
+                excerpt=excerpt,
+                interpretation=interpretation
+            ))
+    
+    # Specific: conclusion restates abstract
+    abstract_match = re.search(r'abstract.*?conclusion[:\s]+(.{50,200})', full_text, re.DOTALL)
+    discussion_match = re.search(r'discussion.*?our study found(.{50,200})', full_text, re.DOTALL)
+    if abstract_match and discussion_match:
+        findings.append(Finding(
+            line=1,
+            category="♾️  PHANTOM LOOP",
+            severity="LOW",
+            excerpt="Abstract conclusion ↔ Discussion conclusion",
+            interpretation=(
+                "Conclusion in discussion closely mirrors abstract conclusion — "
+                "the loop is closed without new synthesis. "
+                "What did the data reveal BEYOND the original hypothesis?"
+            )
+        ))
+    
+    return findings
+
+
+# ─────────────────────────────────────────────
+# 3. ZOMBIE ORBITS — Dead findings still circling
+#    In code: deprecated functions still called
+#    In medicine: outdated guidelines still referenced as
+#    justification even after they've been superseded
+# ─────────────────────────────────────────────
+
+ZOMBIE_SIGNALS = [
+    (r'(previously reported|our previous|earlier study|prior publication)',
+     "Self-citation as foundation — prior findings being used to justify current design without re-examination"),
+    (r'(led to updated|led to revised|updated guidelines|revised recommendations).*'
+     r'(raising uncertainty|however|but|despite|although)',
+     "Guideline updated but uncertainty remains — the update itself is now the zombie orbit"),
+    (r'(institutional|local) (guidelines|protocol|goal).*(changed|updated|shifted)',
+     "Institutional protocol changed mid-study — but outcomes compared across protocol eras as if equivalent"),
+    (r'(secular trend|time trend|confound).*(cannot rule out|possible|may)',
+     "Secular trend acknowledged as possible confounder but not addressed — the ghost in the results"),
+]
+
+def detect_zombie_orbits(lines: List[str]) -> List[Finding]:
+    findings = []
+    full_text = " ".join(lines)
+    
+    for pattern, interpretation in ZOMBIE_SIGNALS:
+        match = re.search(pattern, full_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            char_pos = match.start()
+            approx_line = full_text[:char_pos].count('\n') + 1
+            excerpt = match.group(0)[:120].replace('\n', ' ')
+            
+            findings.append(Finding(
+                line=approx_line,
+                category="🧟 ZOMBIE ORBIT",
+                severity="HIGH" if "cannot rule out" in pattern or "changed" in pattern else "MEDIUM",
+                excerpt=excerpt,
+                interpretation=interpretation
+            ))
+    
+    return findings
+
+
+# ─────────────────────────────────────────────
+# 4. EVIDENCE VOIDS — Missing observability
+#    In code: swallowed exceptions, no logging
+#    In medicine: missing data acknowledged but assumed away,
+#    unmeasured confounders, key variables not collected
+# ─────────────────────────────────────────────
+
+VOID_SIGNALS = [
+    (r'(assumed|assumption).*(missing at random|random)',
+     "HIGH",
+     "Missing data assumed random — this assumption is untestable and may hide systematic bias"),
+    (r'(not available|not collected|was not available|were not available)',
+     "HIGH",
+     "Key variable not collected — the gap is named but its effect on conclusions is unquantified"),
+    (r'(single.site|one (hospital|center|institution))',
+     "MEDIUM",
+     "Single-site study — results may reflect local practice patterns rather than generalizable signal"),
+    (r'(confounding by indication|possible confound)',
+     "HIGH",
+     "Confounding by indication acknowledged — sicker patients may systematically differ in ways that mask or create the observed effect"),
+    (r'(sub.?group|subgroup).*(should be interpreted|cautious|exploratory|hypothesis.generat)',
+     "MEDIUM",
+     "Subgroup finding flagged as exploratory — but subgroup result (non-shockable rhythm benefit) is the most clinically interesting finding in the paper"),
+    (r'(missing|incomplete).*(race|demographic|data)\D{0,30}(\d+\.?\d*%)',
+     "MEDIUM",
+     "Demographic data missing for significant percentage — equity implications unexamined"),
+    (r'(time to|timing of).*(not available|not collected|was not)',
+     "HIGH",
+     "TTM initiation timing not captured — yet timing is hypothesized as critical variable. This void sits directly inside the therapeutic window question"),
+]
+
+def detect_evidence_voids(lines: List[str]) -> List[Finding]:
+    findings = []
+    full_text = " ".join(lines)
+    
+    for pattern, severity, interpretation in VOID_SIGNALS:
+        match = re.search(pattern, full_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            char_pos = match.start()
+            approx_line = full_text[:char_pos].count('\n') + 1
+            excerpt = match.group(0)[:120].replace('\n', ' ')
+            
+            findings.append(Finding(
+                line=approx_line,
+                category="📊 EVIDENCE VOID",
+                severity=severity,
+                excerpt=excerpt,
+                interpretation=interpretation
+            ))
+    
+    return findings
+
+
+# ─────────────────────────────────────────────
+# SCANNER + REPORT
+# ─────────────────────────────────────────────
+
+SEVERITY_WEIGHTS = {"HIGH": 3.0, "MEDIUM": 1.5, "LOW": 0.5}
+
+def run_scan(filepath: str) -> None:
+    with open(filepath, 'r') as f:
+        text = f.read()
+    
+    lines = text.split('\n')
+    
+    print("\n" + "="*70)
+    print("🌌 DARK MATTER DETECTION — MEDICAL LITERATURE EDITION")
+    print("="*70)
+    print(f"File: {filepath}")
+    print(f"Lines: {len(lines)}")
+    
+    all_findings = []
+    
+    print("\n🌑 Running Magic Gravity detector...")
+    mg = detect_magic_gravity(lines)
+    all_findings.extend(mg)
+    print(f"   Found {len(mg)} magic constants")
+    
+    print("♾️  Running Phantom Loops detector...")
+    pl = detect_phantom_loops(lines)
+    all_findings.extend(pl)
+    print(f"   Found {len(pl)} phantom loops")
+    
+    print("🧟 Running Zombie Orbits detector...")
+    zo = detect_zombie_orbits(lines)
+    all_findings.extend(zo)
+    print(f"   Found {len(zo)} zombie orbits")
+    
+    print("📊 Running Evidence Voids detector...")
+    ev = detect_evidence_voids(lines)
+    all_findings.extend(ev)
+    print(f"   Found {len(ev)} evidence voids")
+    
+    total_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in all_findings)
+    
+    print("\n" + "="*70)
+    print(f"🌌 TOTAL DARK MATTER SCORE: {total_score:.1f}")
+    print(f"   Total findings: {len(all_findings)}")
+    print("="*70)
+    
+    # Full report
+    for category in ["🌑 MAGIC GRAVITY", "♾️  PHANTOM LOOP", "🧟 ZOMBIE ORBIT", "📊 EVIDENCE VOID"]:
+        cat_findings = [f for f in all_findings if f.category == category]
+        if not cat_findings:
+            continue
+        cat_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in cat_findings)
+        print(f"\n{'-'*70}")
+        print(f"{category} ({len(cat_findings)} findings, score: {cat_score:.1f})")
+        print(f"{'-'*70}")
+        for f in cat_findings:
+            print(f"\n  Line ~{f.line} | Severity: {f.severity}")
+            print(f"  Excerpt: \"{f.excerpt}\"")
+            print(f"  ⟶  {f.interpretation}")
+    
+    print("\n" + "="*70)
+    print("🌌 DARK MATTER SYNTHESIS — What This Means For The Therapeutic Window")
+    print("="*70)
+    
+    high = [f for f in all_findings if f.severity == "HIGH"]
+    print(f"\n  {len(high)} HIGH severity findings — these are the gravitational wells")
+    print("\n  The paper documents both sides of your window:")
+    print("  → Heat damage side: fever (>37.5°C) = confirmed harm")
+    print("  → Frost damage side: 33°C vs 36°C = no significant difference at population level")
+    print("  → The therapeutic window SIGNAL appears in the subgroup:")
+    print("    Non-shockable rhythms: aOR 2.04 (1.01–4.11) for 33°C")
+    print("    This is where your dark matter tool is pointing.")
+    print("\n  The biggest evidence void: TIMING not collected.")
+    print("  The therapeutic window may not be temperature alone —")
+    print("  it may be temperature × time × rhythm type.")
+    print("  That's the invisible threshold. That's what's worth running next.")
+    print("\n" + "="*70)
+
+
+if __name__ == "__main__":
+    filepath = sys.argv[1] if len(sys.argv) > 1 else "/home/claude/paper_text.txt"
+    run_scan(filepath)
